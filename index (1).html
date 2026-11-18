@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard Extruder · ESP32-S3</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg1:#fdf6e7; --bg2:#e6f2fc;
+  --surface:#ffffff; --line:#d8e6f3; --grid:#e6eef6;
+  --ink:#12263a; --ink2:#46596c; --ink3:#7a8a99;
+  --blue-soft:#e8f3fd; --cream:#fff7e6; --cream-line:#f1e2bd;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --t1:#eaf4fe; --t2:#fff1e7; --t3:#e8f8f1;
+  --good:#008300; --warn:#a86a00; --crit:#d12f2f; --info:#46596c;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:linear-gradient(160deg,var(--bg1) 0%,#f4f8fc 45%,var(--bg2) 100%) fixed}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:16px 24px;
+  background:linear-gradient(90deg,#d6eafb 0%,#e9f3fc 55%,#fdf1d9 100%);border-bottom:1px solid #c6dcf0}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:42px;height:42px;border-radius:12px;background:var(--s1);color:#fff;display:grid;place-items:center;font-size:22px;box-shadow:0 4px 10px rgba(42,120,214,.3)}
+h1{font-size:19px;margin:0;font-weight:700;color:#0f2a45}
+h1 small{display:block;font-weight:400;color:var(--ink2);font-size:12px;margin-top:2px}
+.right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;background:#fff;border:1px solid var(--line);border-radius:999px;font-size:13px;color:var(--ink2)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ink3)}
+.pill.on .dot{background:var(--good);box-shadow:0 0 0 4px rgba(0,131,0,.15)} .pill.err .dot{background:var(--crit);box-shadow:0 0 0 4px rgba(209,47,47,.15)}
+button,select,input{font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 13px}
+button{cursor:pointer} button:hover{border-color:var(--s1);background:var(--blue-soft)}
+button.primary{background:var(--s1);border-color:var(--s1);color:#fff} button.primary:hover{background:#1f66bb}
+main{max-width:1240px;margin:0 auto;padding:18px 24px 48px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px;color:var(--ink2);font-size:13px;
+  background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.toolbar .sp{flex:1}
+.toolbar label{margin:0}
+
+/* layout: suhu besar di kiri, dua RPM bertumpuk di kanan */
+.layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px}
+.c-t{grid-row:span 2}
+.card{position:relative;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:16px;padding:20px 18px 16px;
+  background:linear-gradient(180deg,var(--tint) 0,#fff 150px);box-shadow:0 2px 10px rgba(30,70,110,.06)}
+.card::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--accent)}
+.c-t{--accent:var(--s1);--tint:var(--t1)} .c-e{--accent:var(--s2);--tint:var(--t2)} .c-p{--accent:var(--s3);--tint:var(--t3)}
+.card.crit{border-color:var(--crit);box-shadow:0 0 0 3px rgba(209,47,47,.15)}
+.card h2{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;color:var(--ink2);margin:0;text-transform:uppercase;letter-spacing:.06em}
+.ico{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px;background:var(--accent)}
+.chead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.chip{display:inline-flex;gap:6px;align-items:center;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;background:#fff;border:1px solid currentColor}
+.chip.ok{color:var(--good)} .chip.warn{color:var(--warn)} .chip.crit{color:var(--crit)} .chip.info{color:var(--info)}
+.big{font-size:64px;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:#0f2a45}
+.big .u{font-size:22px;font-weight:500;color:var(--ink2);margin-left:4px;letter-spacing:0}
+.sub{color:var(--ink2);font-size:13px;margin:4px 0 12px}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:baseline}
+.chartwrap{position:relative;flex:1;min-height:150px}
+.c-t .chartwrap{min-height:280px}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;box-shadow:0 4px 14px rgba(20,50,90,.18);white-space:nowrap;display:none;z-index:2;font-variant-numeric:tabular-nums}
+.tip b{font-weight:700}
+.rpmbody{display:grid;grid-template-columns:210px minmax(0,1fr);gap:14px;align-items:center}
+.gauge{display:block;width:100%}
+.gauge .track{stroke:#dfeaf4} .gauge text{fill:#0f2a45;font-variant-numeric:tabular-nums}
+.gauge .lbl{fill:var(--ink3);font-size:11px}
+.rpmbody .chartwrap{height:150px;min-height:150px;flex:none}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px}
+.tile{border-radius:14px;padding:14px 16px;border:1px solid var(--cream-line);background:var(--cream)}
+.tile:nth-child(2){background:var(--blue-soft);border-color:var(--line)}
+.tile .k{font-size:12px;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.tile .v{font-size:28px;font-weight:700;color:#0f2a45;font-variant-numeric:tabular-nums}
+.tile .n{font-size:12px;color:var(--ink3)}
+details{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 16px}
+summary{cursor:pointer;color:var(--ink2);font-size:13px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:6px 10px;border-bottom:1px solid var(--grid)} th:first-child,td:first-child{text-align:left}
+th{color:var(--ink2);font-weight:700;background:var(--blue-soft)}
+tbody tr:nth-child(even){background:#fffaf0}
+dialog{border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink);padding:22px;max-width:480px;width:92vw}
+dialog::backdrop{background:rgba(15,42,69,.45)}
+dialog h3{margin:0 0 12px}
+label{display:block;font-size:13px;color:var(--ink2);margin:10px 0 4px}
+dialog input,dialog select{width:100%}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hint{font-size:12px;color:var(--ink3);margin-top:6px}
+fieldset{border:1px solid var(--line);background:#fbfdff;border-radius:12px;margin:12px 0 0;padding:4px 12px 12px}
+legend{font-size:12px;color:var(--ink2);padding:0 6px;font-weight:600}
+.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr} .c-t{grid-row:auto} .c-t .chartwrap{min-height:220px}
+  .big{font-size:54px}
+}
+@media (max-width:520px){
+  .rpmbody{grid-template-columns:1fr} .gauge{max-width:240px;margin:0 auto}
+  header,main{padding-left:14px;padding-right:14px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><div class="logo">📡</div><h1>Monitoring Extruder<small>ESP32-S3 N16R8 · suhu · RPM extruder · RPM puller</small></h1></div>
+  <div class="right">
+    <span class="pill" id="conn"><span class="dot"></span><span id="connTxt">Belum terhubung</span></span>
+    <button id="btnSet">⚙ Pengaturan</button>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <label for="range" style="margin:0">Rentang grafik</label>
+    <select id="range">
+      <option value="60">1 menit</option>
+      <option value="300" selected>5 menit</option>
+      <option value="900">15 menit</option>
+      <option value="3600">60 menit</option>
+    </select>
+    <span class="sp"></span>
+    <span id="lastRx">Update terakhir: —</span>
+    <button id="btnCsv">⬇ Ekspor CSV</button>
+  </div>
+
+  <div class="layout">
+    <!-- SUHU (kolom kiri, besar) -->
+    <section class="card c-t" id="cardT">
+      <div class="chead"><h2><span class="ico">🌡</span>Suhu barrel</h2><span class="chip info" id="chipT">–</span></div>
+      <div class="big"><span id="vT">—</span><span class="u">°C</span></div>
+      <div class="sub" id="subT">—</div>
+      <div class="chartwrap"><canvas id="cvT" role="img" aria-label="Grafik suhu terhadap waktu"></canvas><div class="tip" id="tipT"></div></div>
+    </section>
+
+    <!-- RPM EXTRUDER -->
+    <section class="card c-e" id="cardE">
+      <div class="chead"><h2><span class="ico">⚙</span>RPM extruder</h2></div>
+      <div class="rpmbody">
+        <svg class="gauge" viewBox="0 0 200 150" id="gE" role="img" aria-label="Gauge RPM extruder"></svg>
+        <div class="chartwrap"><canvas id="cvE" role="img" aria-label="Grafik RPM extruder terhadap waktu"></canvas><div class="tip" id="tipE"></div></div>
+      </div>
+    </section>
+
+    <!-- RPM PULLER -->
+    <section class="card c-p" id="cardP">
+      <div class="chead"><h2><span class="ico">🔄</span>RPM puller</h2></div>
+      <div class="rpmbody">
+        <svg class="gauge" viewBox="0 0 200 150" id="gP" role="img" aria-label="Gauge RPM puller"></svg>
+        <div class="chartwrap"><canvas id="cvP" role="img" aria-label="Grafik RPM puller terhadap waktu"></canvas><div class="tip" id="tipP"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Rasio RPM puller / extruder</div><div class="v" id="vRatio">—</div><div class="n">indikator kasar tarikan (belum memperhitungkan diameter roller)</div></div>
+    <div class="tile"><div class="k">Suhu min / maks (rentang)</div><div class="v" id="vMM">—</div><div class="n">dari data pada rentang grafik</div></div>
+    <div class="tile"><div class="k">Jumlah sampel</div><div class="v" id="vN">0</div><div class="n">tersimpan di browser (maks 3600)</div></div>
+  </div>
+
+  <details id="tbl">
+    <summary>Tampilkan sebagai tabel (15 data terakhir)</summary>
+    <table><thead><tr><th>Waktu</th><th>Suhu (°C)</th><th>RPM extruder</th><th>RPM puller</th></tr></thead><tbody id="tbody"></tbody></table>
+  </details>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog" id="frm">
+    <h3>Pengaturan</h3>
+    <label for="mode">Sumber data</label>
+    <select id="mode">
+      <option value="demo">Demo (data simulasi)</option>
+      <option value="mqtt">MQTT via WebSocket (cocok untuk GitHub Pages)</option>
+      <option value="serial">USB Serial (Chrome/Edge desktop)</option>
+      <option value="http">HTTP langsung ke ESP32 (jaringan lokal)</option>
+    </select>
+
+    <fieldset data-mode="mqtt"><legend>MQTT</legend>
+      <label for="mqttUrl">Broker (wss://)</label><input id="mqttUrl">
+      <label for="topic">Topic</label><input id="topic">
+      <div class="hint">Broker publik bersifat terbuka. Ganti topic dengan nama unik (sama dengan di firmware), dan jangan kirim data sensitif.</div>
+    </fieldset>
+    <fieldset data-mode="http"><legend>HTTP</legend>
+      <div class="row2"><div><label for="httpUrl">URL endpoint</label><input id="httpUrl"></div><div><label for="httpMs">Interval (ms)</label><input id="httpMs" type="number" min="200" step="100"></div></div>
+      <div class="hint">Hanya jalan jika halaman dibuka dari <code>http://</code> atau file lokal. Dari GitHub Pages (https) akan diblokir browser.</div>
+    </fieldset>
+    <fieldset data-mode="serial"><legend>Serial</legend>
+      <label for="baud">Baud rate</label><input id="baud" type="number">
+      <div class="hint">Setelah Simpan, browser akan meminta memilih port COM ESP32.</div>
+    </fieldset>
+
+    <fieldset><legend>Batas &amp; skala</legend>
+      <div class="row2">
+        <div><label for="sp">Setpoint suhu (°C)</label><input id="sp" type="number" step="1"></div>
+        <div><label for="tol">Toleransi ± (°C)</label><input id="tol" type="number" step="1"></div>
+        <div><label for="tmax">Batas bahaya (°C)</label><input id="tmax" type="number" step="1"></div>
+        <div></div>
+        <div><label for="emax">Skala RPM extruder</label><input id="emax" type="number" step="1"></div>
+        <div><label for="pmax">Skala RPM puller</label><input id="pmax" type="number" step="1"></div>
+      </div>
+    </fieldset>
+    <div class="actions"><button value="cancel">Batal</button><button class="primary" value="ok" id="btnSave">Simpan &amp; hubungkan</button></div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const DEF = {
+  mode:'demo',
+  mqttUrl:'wss://broker.hivemq.com:8884/mqtt',
+  topic:'extruder-esp32s3/GANTI-NAMA-UNIK/data',
+  httpUrl:'http://192.168.1.50/data', httpMs:1000,
+  baud:115200,
+  sp:190, tol:5, tmax:230, emax:100, pmax:60
+};
+let cfg = {...DEF};
+try { cfg = {...DEF, ...JSON.parse(localStorage.getItem('extruder-cfg')||'{}')}; } catch(e){}
+
+const MAXBUF = 3600;
+const buf = [];            // {ts, t, e, p}
+let lastRx = 0, range = 300, cur = null;
+
+/* ---------- util ---------- */
+const fmt = (v,d=1) => (v==null||isNaN(v)) ? '—' : Number(v).toFixed(d);
+const hms = ts => new Date(ts).toLocaleTimeString('id-ID',{hour12:false});
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const num = v => (v===null||v===undefined||v==='') ? null : (isFinite(+v) ? +v : null);
+
+/* ---------- data in ---------- */
+function push(o, ts=Date.now()){
+  buf.push({ts, t:num(o.temp), e:num(o.rpm_ext), p:num(o.rpm_pull)});
+  if(buf.length>MAXBUF) buf.shift();
+  lastRx = ts;
+  schedule();
+}
+function handleLine(line){
+  if(line[0]!=='{') return;
+  try{ push(JSON.parse(line)); }catch(e){}
+}
+
+/* ---------- connections ---------- */
+function setConn(state, txt){
+  $('#conn').className = 'pill ' + state;
+  $('#connTxt').textContent = txt;
+}
+async function disconnect(){
+  if(cur){ try{ await cur.stop(); }catch(e){} cur=null; }
+}
+async function connect(){
+  await disconnect();
+  try{
+    if(cfg.mode==='demo') startDemo();
+    else if(cfg.mode==='mqtt') await startMqtt();
+    else if(cfg.mode==='http') startHttp();
+    else if(cfg.mode==='serial') await startSerial();
+  }catch(e){
+    setConn('err', e.message||String(e));
+  }
+}
+
+/* demo */
+const S = {t:28, e:0, p:0};
+function simStep(ts){
+  const n = ()=>Math.random()-.5;
+  S.t += (cfg.sp - S.t)*0.02 + n()*0.3 + Math.sin(ts/9000)*0.12;
+  S.e += (cfg.emax*0.45 - S.e)*0.06 + n()*cfg.emax*0.008;
+  S.p += (cfg.pmax*0.23 - S.p)*0.06 + n()*cfg.pmax*0.006;
+  push({temp:S.t, rpm_ext:Math.max(0,S.e), rpm_pull:Math.max(0,S.p)}, ts);
+}
+function startDemo(){
+  if(!buf.length){
+    const now = Date.now();
+    for(let i=300;i>0;i--) simStep(now-i*1000);
+  }
+  const id = setInterval(()=>simStep(Date.now()),1000);
+  cur = {stop:()=>clearInterval(id)};
+  setConn('on','Mode demo');
+}
+
+/* mqtt */
+function loadMqtt(){
+  if(window.mqtt) return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js';
+    s.onload=res; s.onerror=()=>rej(new Error('Gagal memuat library MQTT'));
+    document.head.appendChild(s);
+  });
+}
+async function startMqtt(){
+  setConn('off','Memuat MQTT…');
+  await loadMqtt();
+  const c = mqtt.connect(cfg.mqttUrl,{reconnectPeriod:3000,connectTimeout:8000});
+  c.on('connect',()=>{ c.subscribe(cfg.topic); setConn('on','MQTT terhubung'); });
+  c.on('message',(t,m)=>handleLine(m.toString().trim()));
+  c.on('reconnect',()=>setConn('off','MQTT menyambung ulang…'));
+  c.on('offline',()=>setConn('err','MQTT offline'));
+  c.on('error',e=>setConn('err','MQTT error'));
+  cur = {stop:()=>c.end(true)};
+}
+
+/* http */
+function startHttp(){
+  const tick = async()=>{
+    try{
+      const r = await fetch(cfg.httpUrl,{cache:'no-store'});
+      push(await r.json());
+      setConn('on','HTTP terhubung');
+    }catch(e){
+      const blocked = location.protocol==='https:' && cfg.httpUrl.startsWith('http:');
+      setConn('err', blocked ? 'Diblokir (https → http), pakai MQTT/Serial' : 'ESP32 tidak terjangkau');
+    }
+  };
+  tick();
+  const id = setInterval(tick, Math.max(200,cfg.httpMs));
+  cur = {stop:()=>clearInterval(id)};
+}
+
+/* web serial */
+async function startSerial(){
+  if(!('serial' in navigator)) throw new Error('Browser tidak mendukung Web Serial (pakai Chrome/Edge desktop)');
+  const port = await navigator.serial.requestPort();
+  await port.open({baudRate:cfg.baud});
+  const dec = new TextDecoderStream();
+  const closed = port.readable.pipeTo(dec.writable).catch(()=>{});
+  const reader = dec.readable.getReader();
+  let alive = true;
+  cur = {stop: async()=>{ alive=false; try{await reader.cancel();}catch(e){} await closed; try{await port.close();}catch(e){} }};
+  setConn('on','Serial terhubung');
+  (async()=>{
+    let b='';
+    try{
+      while(alive){
+        const {value,done} = await reader.read();
+        if(done) break;
+        b += value;
+        let i;
+        while((i=b.indexOf('\n'))>=0){ handleLine(b.slice(0,i).trim()); b=b.slice(i+1); }
+      }
+    }catch(e){}
+    if(alive) setConn('err','Serial terputus');
+  })();
+}
+
+/* ---------- status ---------- */
+function tempStatus(t){
+  if(t==null) return ['crit','⚠','Sensor putus'];
+  if(t>cfg.tmax) return ['crit','⚠','Overheat'];
+  if(t>cfg.sp+cfg.tol) return ['warn','▲','Di atas setpoint'];
+  if(t>=cfg.sp-cfg.tol) return ['ok','✓','Stabil'];
+  return ['info','◔','Pemanasan'];
+}
+
+/* ---------- gauge ---------- */
+function polar(cx,cy,r,deg){ const a=deg*Math.PI/180; return [cx+r*Math.cos(a), cy+r*Math.sin(a)]; }
+function arc(cx,cy,r,a0,a1){
+  const [x0,y0]=polar(cx,cy,r,a0), [x1,y1]=polar(cx,cy,r,a1);
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${(a1-a0)>180?1:0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+function gauge(svg, val, max, color, unit){
+  const f = val==null ? 0 : Math.min(1,Math.max(0,val/max));
+  const A0=150, SW=240, cx=100, cy=90, r=72;
+  svg.innerHTML =
+    `<path class="track" d="${arc(cx,cy,r,A0,A0+SW)}" fill="none" stroke-width="12" stroke-linecap="round"/>`+
+    (f>0.003 ? `<path d="${arc(cx,cy,r,A0,A0+SW*f)}" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round"/>` : '')+
+    `<text x="${cx}" y="${cy+6}" text-anchor="middle" font-size="34" font-weight="650">${fmt(val,1)}</text>`+
+    `<text x="${cx}" y="${cy+26}" text-anchor="middle" font-size="12" class="lbl">${unit}</text>`+
+    `<text x="${polar(cx,cy,r,A0)[0]}" y="146" text-anchor="middle" class="lbl">0</text>`+
+    `<text x="${polar(cx,cy,r,A0+SW)[0]}" y="146" text-anchor="middle" class="lbl">${max}</text>`;
+  svg.setAttribute('aria-label', `${unit} ${fmt(val,1)} dari skala ${max}`);
+}
+
+/* ---------- line chart ---------- */
+const charts = {};   // id -> {pts, hover}
+function niceTicks(lo,hi,n=4){
+  const span = Math.max(hi-lo, 1e-6), raw = span/n;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=raw);
+  const t0 = Math.floor(lo/step)*step, out=[];
+  for(let v=t0; v<=hi+step*0.001; v+=step) out.push(+v.toFixed(6));
+  return out;
+}
+function drawChart(id, key, colorVar, unit, dec, opt={}){
+  const cv = $('#cv'+id), tip = $('#tip'+id);
+  const dpr = window.devicePixelRatio||1, w = cv.clientWidth, h = cv.clientHeight;
+  if(!w||!h) return;
+  if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); }
+  const c = cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+  const color = css(colorVar), grid=css('--grid'), ink3=css('--ink3'), surf=css('--surface'), ink=css('--ink');
+  const now = Date.now(), x0 = now-range*1000;
+  const pts = buf.filter(d=>d.ts>=x0 && d[key]!=null);
+  const M = {l:40,r:10,t:8,b:20}, pw=w-M.l-M.r, ph=h-M.t-M.b;
+
+  let lo = opt.zero ? 0 : Infinity, hi = -Infinity;
+  pts.forEach(d=>{ lo=Math.min(lo,d[key]); hi=Math.max(hi,d[key]); });
+  if(opt.band){ lo=Math.min(lo,opt.band[0]); hi=Math.max(hi,opt.band[1]); }
+  if(!isFinite(hi)){ hi = opt.zero ? 10 : 100; if(!isFinite(lo)) lo=0; }
+  const padv = (hi-lo||1)*0.12; hi += padv; if(!opt.zero) lo -= padv;
+  const ticks = niceTicks(lo,hi,4); lo=Math.min(lo,ticks[0]); hi=Math.max(hi,ticks[ticks.length-1]);
+  const X = ts => M.l + (ts-x0)/(range*1000)*pw;
+  const Y = v => M.t + (1-(v-lo)/(hi-lo))*ph;
+
+  c.font='11px system-ui,sans-serif'; c.textBaseline='middle'; c.textAlign='right';
+  ticks.forEach(v=>{
+    const y=Y(v); c.strokeStyle=grid; c.lineWidth=1; c.beginPath(); c.moveTo(M.l,y); c.lineTo(w-M.r,y); c.stroke();
+    c.fillStyle=ink3; c.fillText(String(+v.toFixed(2)), M.l-6, y);
+  });
+  c.textAlign='center'; c.textBaseline='top';
+  for(let i=0;i<=3;i++){ const ts=x0+range*1000*i/3; c.textAlign = i==0?'left':(i==3?'right':'center'); c.fillStyle=ink3; c.fillText(hms(ts), X(ts)+(i==0?-2:i==3?2:0), h-M.b+5); }
+
+  if(opt.band){
+    c.fillStyle=color; c.globalAlpha=.10; c.fillRect(M.l,Y(opt.band[1]),pw,Y(opt.band[0])-Y(opt.band[1])); c.globalAlpha=1;
+    c.setLineDash([4,4]); c.strokeStyle=ink3; c.beginPath(); c.moveTo(M.l,Y(opt.sp)); c.lineTo(w-M.r,Y(opt.sp)); c.stroke(); c.setLineDash([]);
+  }
+
+  const sc = pts.map(d=>[X(d.ts),Y(d[key]),d]);
+  charts[id] = {sc, M, w, h, hover:(charts[id]||{}).hover ?? null};
+  if(sc.length){
+    c.strokeStyle=color; c.lineWidth=2; c.lineJoin='round'; c.lineCap='round'; c.beginPath();
+    let prev=null;
+    sc.forEach(([x,y,d])=>{
+      if(prev && d.ts-prev>5000) c.moveTo(x,y); else if(prev===null) c.moveTo(x,y); else c.lineTo(x,y);
+      prev=d.ts;
+    });
+    c.stroke();
+    const hv = charts[id].hover!=null ? sc[charts[id].hover] : sc[sc.length-1];
+    if(hv){
+      if(charts[id].hover!=null){ c.strokeStyle=ink3; c.lineWidth=1; c.beginPath(); c.moveTo(hv[0],M.t); c.lineTo(hv[0],M.t+ph); c.stroke(); }
+      c.fillStyle=surf; c.beginPath(); c.arc(hv[0],hv[1],6,0,7); c.fill();
+      c.fillStyle=color; c.beginPath(); c.arc(hv[0],hv[1],4,0,7); c.fill();
+      if(charts[id].hover!=null){
+        tip.style.display='block';
+        tip.innerHTML = `${hms(hv[2].ts)}<br><span class="swatch" style="background:${color}"></span><b>${fmt(hv[2][key],dec)} ${unit}</b>`;
+        const tw = tip.offsetWidth; let tx = hv[0]+12; if(tx+tw>w) tx = hv[0]-tw-12;
+        tip.style.left = Math.max(0,tx)+'px'; tip.style.top = Math.max(0,hv[1]-40)+'px';
+      } else tip.style.display='none';
+    }
+  } else {
+    tip.style.display='none';
+    c.fillStyle=ink3; c.textAlign='center'; c.textBaseline='middle'; c.fillText('Belum ada data', w/2, h/2);
+  }
+}
+function bindHover(id){
+  const cv = $('#cv'+id);
+  cv.addEventListener('pointermove',ev=>{
+    const ch = charts[id]; if(!ch||!ch.sc.length) return;
+    const x = ev.clientX - cv.getBoundingClientRect().left;
+    let best=0, bd=1e9; ch.sc.forEach((p,i)=>{ const d=Math.abs(p[0]-x); if(d<bd){bd=d;best=i;} });
+    ch.hover = best; schedule();
+  });
+  cv.addEventListener('pointerleave',()=>{ if(charts[id]){ charts[id].hover=null; schedule(); } });
+}
+['T','E','P'].forEach(bindHover);
+
+/* ---------- render ---------- */
+let pending=false;
+function schedule(){ if(!pending){ pending=true; requestAnimationFrame(render); } }
+function render(){
+  pending=false;
+  const last = buf[buf.length-1] || {};
+  const [cls,icon,label] = tempStatus(buf.length?last.t:undefined);
+  $('#vT').textContent = fmt(last.t,1);
+  const chip=$('#chipT'); chip.className='chip '+(buf.length?cls:'info'); chip.textContent = buf.length ? `${icon} ${label}` : '–';
+  $('#cardT').classList.toggle('crit', cls==='crit' && buf.length>0);
+  $('#subT').textContent = `Setpoint ${cfg.sp} °C (±${cfg.tol}) · batas bahaya ${cfg.tmax} °C`;
+
+  gauge($('#gE'), last.e, cfg.emax, css('--s2'), 'RPM');
+  gauge($('#gP'), last.p, cfg.pmax, css('--s3'), 'RPM');
+
+  drawChart('T','t','--s1','°C',1,{band:[cfg.sp-cfg.tol,cfg.sp+cfg.tol], sp:cfg.sp});
+  drawChart('E','e','--s2','RPM',1,{zero:true});
+  drawChart('P','p','--s3','RPM',1,{zero:true});
+
+  $('#vRatio').textContent = (last.e>0.5 && last.p!=null) ? (last.p/last.e).toFixed(2)+' ×' : '—';
+  const x0=Date.now()-range*1000, tv=buf.filter(d=>d.ts>=x0&&d.t!=null).map(d=>d.t);
+  $('#vMM').textContent = tv.length ? `${Math.min(...tv).toFixed(1)} / ${Math.max(...tv).toFixed(1)} °C` : '—';
+  $('#vN').textContent = buf.length;
+  $('#lastRx').textContent = 'Update terakhir: ' + (lastRx ? hms(lastRx) : '—');
+
+  if($('#tbl').open){
+    $('#tbody').innerHTML = buf.slice(-15).reverse().map(d=>`<tr><td>${hms(d.ts)}</td><td>${fmt(d.t,1)}</td><td>${fmt(d.e,1)}</td><td>${fmt(d.p,1)}</td></tr>`).join('');
+  }
+}
+
+/* data stale watchdog */
+setInterval(()=>{
+  if(cfg.mode!=='demo' && lastRx && Date.now()-lastRx>5000 && $('#conn').classList.contains('on')){
+    setConn('err','Data terhenti (>5 dtk)');
+  }
+  schedule();
+},1000);
+
+/* ---------- UI ---------- */
+$('#range').addEventListener('change',e=>{ range=+e.target.value; schedule(); });
+$('#tbl').addEventListener('toggle',schedule);
+window.addEventListener('resize',schedule);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',schedule);
+
+$('#btnCsv').addEventListener('click',()=>{
+  const rows = ['waktu,suhu_C,rpm_extruder,rpm_puller'].concat(buf.map(d=>[new Date(d.ts).toISOString(),d.t??'',d.e??'',d.p??''].join(',')));
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'}));
+  a.download='extruder-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.csv'; a.click(); URL.revokeObjectURL(a.href);
+});
+
+const dlg=$('#dlg'), ids=['mqttUrl','topic','httpUrl','httpMs','baud','sp','tol','tmax','emax','pmax'];
+function showModeFields(){ document.querySelectorAll('fieldset[data-mode]').forEach(f=>f.style.display = f.dataset.mode===$('#mode').value?'':'none'); }
+$('#mode').addEventListener('change',showModeFields);
+$('#btnSet').addEventListener('click',()=>{
+  $('#mode').value=cfg.mode; ids.forEach(i=>$('#'+i).value=cfg[i]); showModeFields(); dlg.showModal();
+});
+$('#frm').addEventListener('submit',e=>{
+  if(e.submitter && e.submitter.value!=='ok') return;
+  const old = cfg.mode;
+  cfg.mode=$('#mode').value;
+  ids.forEach(i=>{ const el=$('#'+i); cfg[i] = el.type==='number' ? (+el.value||DEF[i]) : (el.value.trim()||DEF[i]); });
+  try{ localStorage.setItem('extruder-cfg',JSON.stringify(cfg)); }catch(err){}
+  if(old==='demo' && cfg.mode!=='demo') buf.length=0;   // buang data simulasi
+  connect();            // dipanggil dalam user gesture (perlu untuk Web Serial)
+  schedule();
+});
+
+connect(); schedule();
+</script>
+</body>
+</html>
