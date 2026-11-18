@@ -118,7 +118,7 @@ legend{font-size:12px;color:var(--ink2);padding:0 6px;font-weight:600}
     </select>
     <span class="sp"></span>
     <span id="lastRx">Update terakhir: —</span>
-    <button id="btnCsv">⬇ Ekspor CSV</button>
+    <button id="btnXlsx" class="primary">⬇ Ekspor Excel (.xlsx)</button><button id="btnCsv">CSV</button>
   </div>
 
   <div class="layout">
@@ -495,9 +495,80 @@ window.addEventListener('resize',schedule);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',schedule);
 
 $('#btnCsv').addEventListener('click',()=>{
-  const rows = ['waktu,suhu_C,rpm_extruder,rpm_puller'].concat(buf.map(d=>[new Date(d.ts).toISOString(),d.t??'',d.e??'',d.p??''].join(',')));
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'}));
-  a.download='extruder-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.csv'; a.click(); URL.revokeObjectURL(a.href);
+  // Excel versi Indonesia memakai ; sebagai pemisah kolom dan , sebagai desimal.
+  // Format otomatis menyesuaikan bahasa browser supaya kolom rapi saat dibuka di Excel.
+  const komaDesimal = (1.5).toLocaleString().includes(',');
+  const sep = komaDesimal ? ';' : ',';
+  const n = v => v==null ? '' : (komaDesimal ? v.toFixed(1).replace('.',',') : v.toFixed(1));
+  const p2 = x => String(x).padStart(2,'0');
+  const tm = ts => { const d=new Date(ts); return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`; };
+  const rows = ['Waktu (lokal)','Suhu (C)','RPM extruder','RPM puller'].join(sep);
+  const body = buf.map(d=>[tm(d.ts),n(d.t),n(d.e),n(d.p)].join(sep));
+  const csv = '﻿' + [rows].concat(body).join('\r\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='extruder-log-'+tm(Date.now()).replace(/[: ]/g,'-')+'.csv'; a.click(); URL.revokeObjectURL(a.href);
+});
+
+
+/* ---------- ekspor Excel (.xlsx) berupa tabel berwarna ---------- */
+function loadScript(url, ok){
+  if(ok()) return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const el=document.createElement('script'); el.src=url; el.onload=res;
+    el.onerror=()=>rej(new Error('Gagal memuat library (cek internet)'));
+    document.head.appendChild(el);
+  });
+}
+$('#btnXlsx').addEventListener('click', async ()=>{
+  const btn=$('#btnXlsx'), label=btn.textContent;
+  if(!buf.length){ btn.textContent='Belum ada data'; setTimeout(()=>btn.textContent=label,1500); return; }
+  btn.disabled=true; btn.textContent='Menyiapkan…';
+  try{
+    await loadScript('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js', ()=>window.ExcelJS);
+    const r1 = v => v==null ? null : Math.round(v*10)/10;
+    // Excel menyimpan waktu tanpa zona; geser agar yang tampil = jam lokal
+    const local = ts => new Date(ts - new Date(ts).getTimezoneOffset()*60000);
+    const wb = new ExcelJS.Workbook(); wb.creator='Dashboard Extruder';
+    const ws = wb.addWorksheet('Data');
+    ws.addTable({
+      name:'DataExtruder', ref:'A1', headerRow:true,
+      style:{theme:'TableStyleMedium2', showRowStripes:true},
+      columns:[{name:'Waktu',filterButton:true},{name:'Suhu (°C)',filterButton:true},{name:'RPM extruder',filterButton:true},{name:'RPM puller',filterButton:true}],
+      rows: buf.map(d=>[local(d.ts), r1(d.t), r1(d.e), r1(d.p)])
+    });
+    ws.columns = [{width:22},{width:14},{width:16},{width:14}];
+    ws.getColumn(1).numFmt='yyyy-mm-dd hh:mm:ss';
+    [2,3,4].forEach(c=>{ ws.getColumn(c).numFmt='0.0'; ws.getColumn(c).alignment={horizontal:'right'}; });
+    ws.views=[{state:'frozen', ySplit:1}];
+    // gaya header eksplisit (tetap tampil di Excel, Google Sheets, LibreOffice & HP)
+    ws.getRow(1).eachCell(c=>{ c.font={bold:true,color:{argb:'FFFFFFFF'}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF2A78D6'}}; c.alignment={horizontal:'center',vertical:'middle'}; });
+    ws.getRow(1).height=22;
+
+    const n = buf.length+1, sm = wb.addWorksheet('Ringkasan');
+    sm.columns=[{width:26},{width:16}];
+    sm.addRows([
+      ['Ringkasan data',''],
+      ['Jumlah data',{formula:`COUNT(Data!A2:A${n})`}],
+      ['Suhu minimum (°C)',{formula:`MIN(Data!B2:B${n})`}],
+      ['Suhu maksimum (°C)',{formula:`MAX(Data!B2:B${n})`}],
+      ['Suhu rata-rata (°C)',{formula:`AVERAGE(Data!B2:B${n})`}],
+      ['RPM extruder rata-rata',{formula:`AVERAGE(Data!C2:C${n})`}],
+      ['RPM puller rata-rata',{formula:`AVERAGE(Data!D2:D${n})`}],
+      ['Setpoint suhu (°C)', cfg.sp]
+    ]);
+    sm.getRow(1).font={bold:true,size:13};
+    for(let i=3;i<=7;i++) sm.getCell('B'+i).numFmt='0.0';
+
+    const out = await wb.xlsx.writeBuffer();
+    const p2 = x => String(x).padStart(2,'0'), d = new Date();
+    const name = `extruder-log-${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.xlsx`;
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    a.download=name; a.click(); URL.revokeObjectURL(a.href);
+  }catch(e){
+    btn.textContent='Gagal: '+(e.message||e); setTimeout(()=>btn.textContent=label,3000); btn.disabled=false; return;
+  }
+  btn.disabled=false; btn.textContent=label;
 });
 
 const dlg=$('#dlg'), ids=['mqttUrl','topic','httpUrl','httpMs','baud','sp','tol','tmax','emax','pmax'];
