@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Monitoring Extruder · ESP32-S3</title>
+<title>SMACYSTIC Filament · Monitoring</title>
 <link rel="icon" type="image/png" href="logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -66,8 +66,9 @@ input:focus,select:focus{outline:2px solid var(--pri);outline-offset:-1px;border
 /* ---------- shell ---------- */
 .side{position:fixed;inset:0 auto 0 0;width:260px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:30;transition:transform .25s}
 .sbrand{display:flex;align-items:center;gap:12px;padding:20px 20px 14px}
-.sbrand b{font-family:var(--fh);font-size:17px;color:var(--navy);line-height:1.1}
+.sbrand b{font-family:var(--fh);font-size:17px;color:var(--navy);line-height:1.15;letter-spacing:.02em}
 .sbrand small{display:block;color:var(--ink3);font-size:11px;font-weight:400;font-family:var(--fb)}
+.sbrand small.l2{color:var(--pri);font-size:13px;font-weight:600;font-family:var(--fh);margin-top:1px}
 .nav{padding:6px 12px;flex:1;overflow:auto}
 .ngroup{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase;padding:16px 12px 6px}
 .nav a{position:relative;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:var(--ink2);text-decoration:none;font-weight:500;margin:2px 0}
@@ -195,7 +196,7 @@ dialog h3{font-size:18px;margin-bottom:4px;color:var(--navy)}
 <div class="login" id="login">
   <div class="lbrand">
     <div class="logo" role="img" aria-label="Logo"></div>
-    <h2>Monitoring Extruder<br>secara real-time</h2>
+    <h2>SMACYSTIC Filament<br>Monitoring real-time</h2>
     <p>Pantau suhu barrel, RPM extruder, dan RPM puller dari ESP32-S3 lewat WiFi, di mana saja.</p>
     <ul class="feat">
       <li><span class="fi"><i data-i="thermo"></i></span>Suhu barrel dengan zona stabil dan batas bahaya</li>
@@ -222,7 +223,7 @@ dialog h3{font-size:18px;margin-bottom:4px;color:var(--navy)}
 <!-- ================= APLIKASI ================= -->
 <div id="app" hidden>
   <aside class="side" id="side">
-    <div class="sbrand"><div class="logo" role="img" aria-label="Logo"></div><b>Extruder<small>ESP32-S3 Monitor</small></b></div>
+    <div class="sbrand"><div class="logo" role="img" aria-label="Logo"></div><b>SMACYSTIC<small class="l2">Filament</small><small>ESP32-S3 Monitor</small></b></div>
     <nav class="nav" id="nav">
       <div class="ngroup">Monitoring</div>
       <a href="#/dashboard" data-r="dashboard"><i data-i="home"></i>Dashboard</a>
@@ -239,7 +240,7 @@ dialog h3{font-size:18px;margin-bottom:4px;color:var(--navy)}
   <div class="main">
     <header class="topbar">
       <button class="iconbtn" id="btnMenu" aria-label="Buka menu"><i data-i="menu"></i></button>
-      <div class="crumb">Extruder / <b id="crumb">Dashboard</b></div>
+      <div class="crumb">SMACYSTIC / <b id="crumb">Dashboard</b></div>
       <span class="sp"></span>
       <span class="pill" id="conn"><span class="dot"></span><span id="connTxt">Belum terhubung</span></span>
       <button class="ubtn" id="btnUser" aria-label="Menu akun"><div class="avatar" id="tAv"></div><span class="un" id="tNm" style="font-weight:600"></span></button>
@@ -1025,7 +1026,7 @@ $('#btnXlsx').addEventListener('click',async()=>{
   try{
     await loadScript('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js',()=>window.ExcelJS);
     const r1=v=>v==null?null:Math.round(v*10)/10, local=ts=>new Date(ts-new Date(ts).getTimezoneOffset()*60000);
-    const wb=new ExcelJS.Workbook(); wb.creator='Dashboard Extruder';
+    const wb=new ExcelJS.Workbook(); wb.creator='SMACYSTIC Filament';
     const ws=wb.addWorksheet('Data');
     ws.addTable({name:'DataExtruder',ref:'A1',headerRow:true,style:{theme:'TableStyleMedium2',showRowStripes:true},
       columns:[{name:'Waktu',filterButton:true},{name:'Suhu (°C)',filterButton:true},{name:'RPM extruder',filterButton:true},{name:'RPM puller',filterButton:true}],
